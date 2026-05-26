@@ -18,7 +18,7 @@ zabbix_export:
         Availability: net.tcp.service on {$RDP_PORT} (needs a host interface).
         Cert/NLA/TLS: external rdp_check.py targeting {HOST.CONN}.
         Macros: {$RDP_PORT}; {$RDP_HOSTNAME} (cert SAN/CN match, empty = connect address);
-        {$RDP_TIMEOUT} per-connection seconds; {$RDP_CERT_EXPIRY_WARN}/_CRIT days;
+        {$RDP_TIMEOUT} total time budget per check (seconds); {$RDP_CERT_EXPIRY_WARN}/_CRIT days;
         {$RDP_CERT_ALLOW_SELFSIGNED} 1=self-signed OK; {$RDP_CERT_EXPECT_CA} 1=alert if not CA-trusted;
         {$RDP_CERT_MIN_RSA_BITS}/{$RDP_CERT_MIN_EC_BITS} weak-key thresholds; {$RDP_NLA_ENFORCE} 1=alert if NLA off.
       vendor:
@@ -42,6 +42,16 @@ zabbix_export:
               expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
               name: 'RDP service is down on {HOST.NAME}'
               priority: AVERAGE
+        - uuid: c5c96eeb2b9c4666bc0329d48ebd605c
+          name: 'RDP: connect latency'
+          type: SIMPLE
+          key: 'net.tcp.service.perf[tcp,,{$RDP_PORT}]'
+          history: 1w
+          value_type: FLOAT
+          units: s
+          tags:
+            - tag: Application
+              value: 'RDP service'
         - uuid: e8f2778edd93412881200ff4db6d41d7
           name: 'RDP: certificate (raw)'
           type: EXTERNAL

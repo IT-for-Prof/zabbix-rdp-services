@@ -4,7 +4,7 @@
 # install.sh — one-shot deploy for rdp_check.
 #
 # Usage (recommended pinned to a release tag):
-#   curl -fsSL https://raw.githubusercontent.com/IT-for-Prof/zabbix-rdp-services/v0.1.0/scripts/deploy/install.sh | sudo sh
+#   curl -fsSL https://raw.githubusercontent.com/IT-for-Prof/zabbix-rdp-services/v0.2.0/scripts/deploy/install.sh | sudo sh
 # or rolling-main:
 #   curl -fsSL https://raw.githubusercontent.com/IT-for-Prof/zabbix-rdp-services/main/scripts/deploy/install.sh | sudo sh
 #
@@ -23,7 +23,7 @@ set -eu
 # ----- configurable -----
 INSTALL_ROOT="${INSTALL_ROOT:-/opt/rdp_check}"
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/IT-for-Prof/zabbix-rdp-services}"
-REF="${REF:-main}"                          # git ref: tag (v0.1.0), branch, or commit sha
+REF="${REF:-main}"                          # git ref: tag (v0.2.0), branch, or commit sha
 PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 ZBX_USER="${ZBX_USER:-zabbix}"
 ZBX_GROUP="${ZBX_GROUP:-zabbix}"
