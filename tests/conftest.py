@@ -22,8 +22,6 @@ from cryptography.x509.oid import NameOID
 # Make the external script importable as `rdp_check`.
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts" / "externalscripts"))
 
-FIXTURES = Path(__file__).parent / "fixtures"
-
 
 def _self_signed(cn: str, days: int) -> tuple[bytes, bytes]:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)

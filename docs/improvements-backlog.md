@@ -52,7 +52,7 @@ check duration, estate RDP-host coverage, and best-practice research (Zabbix ext
 10. **`{$RDP_CERT_EXPECT_CA}` trust-downgrade trigger** (from the earlier Q): per-host macro + `chain_valid=0` → alerts on any CA→self-signed/broken downgrade, even with self-signed allowed globally.
 
 ## P5 — process / estate hygiene (surfaced, owner decision)
-11. Pre-existing: item mis-tagged `Application: SSH service`; 5 of 6 hosts have **no interface** (root cause of #4 and of native availability not working). 
+11. Pre-existing: item mis-tagged `Application: SSH service`; 5 of 6 hosts have **no interface** (root cause of #4 and of native availability not working).
 12. Publishing the repo (for the proxy `install.sh` path) requires redacting customer hostnames/ports from `docs/phase0/*` and `docs/phase2/4*`.
 
 ## Tuning note (Zabbix 7.0)
