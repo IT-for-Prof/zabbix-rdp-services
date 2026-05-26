@@ -28,7 +28,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import ExtensionOID, NameOID
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __author__ = "Konstantin Tyutyunnik / IT for Prof"
 __license__ = "MIT"
 __url__ = "https://github.com/IT-for-Prof/zabbix-rdp-services"
@@ -272,7 +272,9 @@ def run_cert(host: str, port: int, hostname: str, timeout: float = 10.0) -> dict
 
     out: dict[str, Any] = {"ok": True, "schema_version": SCHEMA_VERSION,
                            "checked_at": now_iso(), "host": host, "port": port}
-    out["nla_enforced"] = check_nla(host, port, max(1.0, _left()))
+    nla = check_nla(host, port, max(1.0, _left()))
+    if nla is not None:  # omit when undeterminable (legacy Standard Security) so the
+        out["nla_enforced"] = nla  # dependent item gets a clean JSONPath no-match, not null
     info = grab_cert(host, port, hostname, max(1.0, _left()))
     out.update(info)
     # Chain validation is an optional 3rd connection: skip it for self-signed certs
