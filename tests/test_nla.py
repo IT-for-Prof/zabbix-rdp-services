@@ -69,3 +69,19 @@ def test_run_cert_nla_enforced_grabs_cert(fake_rdp):
     assert out["nla_enforced"] is True
     assert out["security_layer"] == "hybrid"
     assert out["cert"]["subject_cn"] == "fake.rdp.local"
+
+
+def test_check_nla_indeterminate_socket(fake_rdp):
+    # legacy Standard Security: server confirms X.224 with no RDP_NEG field
+    srv = fake_rdp(rdp.PROTOCOL_RDP, omit_neg=True)
+    assert rdp.check_nla("127.0.0.1", srv.port, timeout=5.0) is None
+
+
+def test_run_cert_omits_nla_when_indeterminate(fake_rdp):
+    # NLA undeterminable (no RDP_NEG, like nvr) -> key omitted entirely so the
+    # Zabbix dependent gets a clean JSONPath no-match instead of an unparseable null
+    srv = fake_rdp(rdp.PROTOCOL_RDP, omit_neg=True)
+    out = rdp.run_cert("127.0.0.1", srv.port, "x", timeout=5.0)
+    assert "nla_enforced" not in out
+    assert out["security_layer"] == "rdp"
+    assert out["cert"] is None

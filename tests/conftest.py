@@ -69,11 +69,12 @@ class FakeRDP(threading.Thread):
     """Accepts connections, replies with an RDP_NEG_RSP, then does TLS (unless RDP)."""
 
     def __init__(self, selected: int, cn: str = "fake.rdp.local", expiry_days: int = 90,
-                 nla_enforced: bool = False, delay: float = 0.0):
+                 nla_enforced: bool = False, delay: float = 0.0, omit_neg: bool = False):
         super().__init__(daemon=True)
         self.selected = selected
         self.nla_enforced = nla_enforced
         self.delay = delay
+        self.omit_neg = omit_neg
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._sock.bind(("127.0.0.1", 0))
@@ -101,6 +102,12 @@ class FakeRDP(threading.Thread):
             time.sleep(self.delay)
         cr = _read_tpkt(conn)
         requested = struct.unpack("<I", cr[-4:])[0] if len(cr) >= 4 else 0
+        if self.omit_neg:  # legacy Standard Security: confirm X.224 with no RDP_NEG field
+            body = b"\xd0\x00\x00\x00\x00\x00"
+            x224 = struct.pack("!B", len(body)) + body
+            conn.sendall(struct.pack("!BBH", 0x03, 0x00, 4 + len(x224)) + x224)
+            conn.close()
+            return
         if self.nla_enforced and requested == 0x00000001:  # SSL-only probe rejected
             neg = struct.pack("<BBHI", 0x03, 0x00, 0x0008, 0x05)  # FAILURE / HYBRID_REQUIRED
             body = b"\xd0\x00\x00\x00\x00\x00" + neg
@@ -135,8 +142,8 @@ def fake_rdp() -> Iterator[Callable[..., FakeRDP]]:
     servers: list[FakeRDP] = []
 
     def _make(selected: int, cn: str = "fake.rdp.local", expiry_days: int = 90,
-              nla_enforced: bool = False, delay: float = 0.0) -> FakeRDP:
-        srv = FakeRDP(selected, cn, expiry_days, nla_enforced, delay)
+              nla_enforced: bool = False, delay: float = 0.0, omit_neg: bool = False) -> FakeRDP:
+        srv = FakeRDP(selected, cn, expiry_days, nla_enforced, delay, omit_neg)
         srv.start()
         servers.append(srv)
         return srv
