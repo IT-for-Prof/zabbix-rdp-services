@@ -1,0 +1,29 @@
+# Tooling / agent caches
+.serena/
+.claude/
+.aider*
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Secrets / local env
+.env
+scripts/.env
+
+# Deploy venv (built by install.sh on each node)
+/opt/rdp_check/
+
+# Editors / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db

@@ -1,0 +1,545 @@
+zabbix_export:
+  version: '7.0'
+  template_groups:
+    - uuid: 57b7ae836ca64446ba2c296389c009b7
+      name: Templates/Modules
+  templates:
+    - uuid: 2a5c7c018a2f491394a494c1a34dc016
+      template: 'Template App RDP Service'
+      name: 'Template App RDP Service'
+      description: |
+        Best-practice RDP monitoring for Zabbix 7.0 — availability, certificate, NLA
+        enforcement and TLS posture via the rdp_check.py external check
+        (X.224 / MS-RDPBCGR negotiation).
+
+        Project & docs: https://github.com/IT-for-Prof/zabbix-rdp-services
+        Author: Konstantin Tyutyunnik — IT for Prof (https://itforprof.com) | License: MIT
+
+        Availability: net.tcp.service on {$RDP_PORT} (needs a host interface).
+        Cert/NLA/TLS: external rdp_check.py targeting {HOST.CONN}.
+        Macros: {$RDP_PORT}; {$RDP_HOSTNAME} (cert SAN/CN match, empty = connect address);
+        {$RDP_TIMEOUT} per-connection seconds; {$RDP_CERT_EXPIRY_WARN}/_CRIT days;
+        {$RDP_CERT_ALLOW_SELFSIGNED} 1=self-signed OK; {$RDP_CERT_EXPECT_CA} 1=alert if not CA-trusted;
+        {$RDP_CERT_MIN_RSA_BITS}/{$RDP_CERT_MIN_EC_BITS} weak-key thresholds; {$RDP_NLA_ENFORCE} 1=alert if NLA off.
+      vendor:
+        name: IT for Prof
+        version: 0.2.0
+      groups:
+        - name: Templates/Modules
+      items:
+        - uuid: 627245fbee5c4de0846d11af408615b3
+          name: 'RDP service is running'
+          type: SIMPLE
+          key: 'net.tcp.service[tcp,,{$RDP_PORT}]'
+          history: 1w
+          valuemap:
+            name: 'Service state'
+          tags:
+            - tag: Application
+              value: 'RDP service'
+          triggers:
+            - uuid: e8a4a65a99444ee791288cdc0daa41f2
+              expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+              name: 'RDP service is down on {HOST.NAME}'
+              priority: AVERAGE
+        - uuid: e8f2778edd93412881200ff4db6d41d7
+          name: 'RDP: certificate (raw)'
+          type: EXTERNAL
+          key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          delay: 1h
+          history: 1d
+          value_type: TEXT
+          timeout: 35s
+          tags:
+            - tag: component
+              value: rdp-cert
+        - uuid: 3ae149889f02483789a30aad98c1b09c
+          name: 'RDP: check ok'
+          type: DEPENDENT
+          key: rdp.ok
+          value_type: UNSIGNED
+          valuemap:
+            name: 'RDP boolean'
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.ok'
+              error_handler: CUSTOM_VALUE
+              error_handler_params: 'false'
+            - type: BOOL_TO_DECIMAL
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+          triggers:
+            - uuid: 3633998d1b5248fb83ed68b0d5c679d6
+              expression: 'last(/Template App RDP Service/rdp.ok)=0'
+              name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+              priority: AVERAGE
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+            - uuid: eeb2c14c2d014d648e2f263cf4a1e245
+              expression: 'nodata(/Template App RDP Service/rdp.ok,2h)=1'
+              name: 'RDP: check not running (no data) on {HOST.NAME}'
+              priority: AVERAGE
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+        - uuid: 9fdb1ff236ab4d6c9232861fc74b75d0
+          name: 'RDP: certificate days to expiry'
+          type: DEPENDENT
+          key: rdp.cert.days_to_expiry
+          value_type: FLOAT
+          units: days
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.days_to_expiry'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+          triggers:
+            - uuid: 74aca394c1cf4b2391017700e769d321
+              expression: 'last(/Template App RDP Service/rdp.cert.days_to_expiry)<0'
+              name: 'RDP: certificate expired on {HOST.NAME}'
+              priority: HIGH
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+            - uuid: 86a2f9bf49e04417b0579e5ca01a97d9
+              expression: 'last(/Template App RDP Service/rdp.cert.days_to_expiry)>=0 and last(/Template App RDP Service/rdp.cert.days_to_expiry)<{$RDP_CERT_EXPIRY_CRIT}'
+              name: 'RDP: certificate expires in <{$RDP_CERT_EXPIRY_CRIT}d on {HOST.NAME}'
+              priority: HIGH
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+            - uuid: 7ef246f217ec4c6b8c3c85d536d97af1
+              expression: 'last(/Template App RDP Service/rdp.cert.days_to_expiry)>={$RDP_CERT_EXPIRY_CRIT} and last(/Template App RDP Service/rdp.cert.days_to_expiry)<{$RDP_CERT_EXPIRY_WARN}'
+              name: 'RDP: certificate expires in <{$RDP_CERT_EXPIRY_WARN}d on {HOST.NAME}'
+              priority: WARNING
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+        - uuid: 06ca6cff0e124ba2a49a511817bfe2bb
+          name: 'RDP: certificate not after'
+          type: DEPENDENT
+          key: rdp.cert.not_after
+          value_type: CHAR
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.not_after'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+        - uuid: b116ae40081b4d48ace6a5e95b68b7cb
+          name: 'RDP: certificate issuer'
+          type: DEPENDENT
+          key: rdp.cert.issuer
+          value_type: CHAR
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.issuer'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+        - uuid: d6bf174d374241a286ce5a150e7c3d04
+          name: 'RDP: certificate subject CN'
+          type: DEPENDENT
+          key: rdp.cert.subject_cn
+          value_type: CHAR
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.subject_cn'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+        - uuid: 3455e6f5836c4b5daa6df89c5bdce279
+          name: 'RDP: certificate self-signed'
+          type: DEPENDENT
+          key: rdp.cert.self_signed
+          value_type: UNSIGNED
+          valuemap:
+            name: 'RDP boolean'
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.self_signed'
+              error_handler: DISCARD_VALUE
+            - type: BOOL_TO_DECIMAL
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+          triggers:
+            - uuid: a86f0734e32a44be93228932677d53a9
+              expression: 'last(/Template App RDP Service/rdp.cert.self_signed)=1 and {$RDP_CERT_ALLOW_SELFSIGNED}=0'
+              name: 'RDP: self-signed certificate on {HOST.NAME}'
+              priority: WARNING
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+        - uuid: 4e9be7d88ded40d0a90d4923c83d061b
+          name: 'RDP: certificate hostname match'
+          type: DEPENDENT
+          key: rdp.cert.hostname_match
+          value_type: UNSIGNED
+          valuemap:
+            name: 'RDP boolean'
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.hostname_match'
+              error_handler: DISCARD_VALUE
+            - type: BOOL_TO_DECIMAL
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+        - uuid: 07cf345ad88b4132a14957a24cd8150d
+          name: 'RDP: certificate chain valid'
+          type: DEPENDENT
+          key: rdp.cert.chain_valid
+          value_type: UNSIGNED
+          valuemap:
+            name: 'RDP boolean'
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.chain_valid'
+              error_handler: DISCARD_VALUE
+            - type: BOOL_TO_DECIMAL
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+          triggers:
+            - uuid: e7fc1e9b463f46b5b2171ac9eed907f9
+              expression: 'last(/Template App RDP Service/rdp.cert.chain_valid)=1 and last(/Template App RDP Service/rdp.cert.hostname_match)=0'
+              name: 'RDP: CA certificate hostname mismatch on {HOST.NAME}'
+              priority: AVERAGE
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+            - uuid: cfa3c8a0f9174be985dc641a536b0639
+              expression: 'last(/Template App RDP Service/rdp.cert.chain_valid)=0 and {$RDP_CERT_EXPECT_CA}=1'
+              name: 'RDP: certificate not CA-trusted (expected CA) on {HOST.NAME}'
+              priority: AVERAGE
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+        - uuid: 503878624e7e42f482bc6c5020bfee14
+          name: 'RDP: certificate valid now'
+          type: DEPENDENT
+          key: rdp.cert.valid_now
+          value_type: UNSIGNED
+          valuemap:
+            name: 'RDP boolean'
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.valid_now'
+              error_handler: DISCARD_VALUE
+            - type: BOOL_TO_DECIMAL
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+          triggers:
+            - uuid: 13a0b0d82cfa42b9803f8eac97541399
+              expression: 'last(/Template App RDP Service/rdp.cert.valid_now)=0'
+              name: 'RDP: certificate not currently valid (not-yet-valid/expired) on {HOST.NAME}'
+              priority: HIGH
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+        - uuid: b5bded3bc18a423fb160332160589246
+          name: 'RDP: certificate key type'
+          type: DEPENDENT
+          key: rdp.cert.key_type
+          value_type: CHAR
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.key_type'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+        - uuid: a830c67541ad43d79c330a5fa8e5609c
+          name: 'RDP: certificate key bits'
+          type: DEPENDENT
+          key: rdp.cert.key_bits
+          value_type: UNSIGNED
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.key_bits'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+          triggers:
+            - uuid: 191074dda8e9447790b316149098c684
+              expression: '(last(/Template App RDP Service/rdp.cert.key_type)="RSA" and last(/Template App RDP Service/rdp.cert.key_bits)>0 and last(/Template App RDP Service/rdp.cert.key_bits)<{$RDP_CERT_MIN_RSA_BITS}) or (last(/Template App RDP Service/rdp.cert.key_type)="EC" and last(/Template App RDP Service/rdp.cert.key_bits)>0 and last(/Template App RDP Service/rdp.cert.key_bits)<{$RDP_CERT_MIN_EC_BITS})'
+              name: 'RDP: weak certificate key on {HOST.NAME}'
+              priority: AVERAGE
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+        - uuid: 1cd6d670b060405697f19662c4980a2c
+          name: 'RDP: certificate signature algorithm'
+          type: DEPENDENT
+          key: rdp.cert.sig_algorithm
+          value_type: CHAR
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.cert.sig_algorithm'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-cert
+          triggers:
+            - uuid: 50719f3fa1ba4e4893a2ea490650d900
+              expression: 'last(/Template App RDP Service/rdp.cert.sig_algorithm)="sha1" or last(/Template App RDP Service/rdp.cert.sig_algorithm)="md5"'
+              name: 'RDP: weak certificate signature algorithm on {HOST.NAME}'
+              priority: AVERAGE
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+        - uuid: d2af5e9d1eb04038ba1177e4191b6aaa
+          name: 'RDP: TLS version'
+          type: DEPENDENT
+          key: rdp.tls.version
+          value_type: CHAR
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.tls.version'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-tls
+        - uuid: 6bd35b67895841e59b1123b39cf88924
+          name: 'RDP: TLS cipher'
+          type: DEPENDENT
+          key: rdp.tls.cipher
+          value_type: CHAR
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.tls.cipher'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-tls
+        - uuid: 18c0fa93b28d4f73999e0381fb78bd33
+          name: 'RDP: security layer'
+          type: DEPENDENT
+          key: rdp.security_layer
+          value_type: CHAR
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.security_layer'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-tls
+          triggers:
+            - uuid: 8fa3aa17807f4b13a1bce3b606655ea4
+              expression: 'last(/Template App RDP Service/rdp.security_layer)="rdp"'
+              name: 'RDP: legacy Standard Security (no TLS) on {HOST.NAME}'
+              priority: WARNING
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+        - uuid: 942248dffcd54309a0f86255cddeb9d4
+          name: 'RDP: NLA enforced'
+          type: DEPENDENT
+          key: rdp.nla_enforced
+          value_type: UNSIGNED
+          valuemap:
+            name: 'RDP boolean'
+          master_item:
+            key: 'rdp_check.py[cert,{HOST.CONN}:{$RDP_PORT},--hostname,{$RDP_HOSTNAME},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.nla_enforced'
+              error_handler: DISCARD_VALUE
+            - type: BOOL_TO_DECIMAL
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-security
+          triggers:
+            - uuid: 49097fb1de364b9a87c52205a5c549bd
+              expression: 'last(/Template App RDP Service/rdp.nla_enforced)=0 and {$RDP_NLA_ENFORCE}=1'
+              name: 'RDP: NLA not enforced on {HOST.NAME}'
+              priority: WARNING
+              dependencies:
+                - name: 'RDP service is down on {HOST.NAME}'
+                  expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+                - name: 'RDP: check failing (unreachable / not RDP / TLS error) on {HOST.NAME}'
+                  expression: 'last(/Template App RDP Service/rdp.ok)=0'
+        - uuid: 57b228ac308b49f892d5174308f81394
+          name: 'RDP: TLS scan (raw)'
+          type: EXTERNAL
+          key: 'rdp_check.py[tls-scan,{HOST.CONN}:{$RDP_PORT},--timeout,{$RDP_TIMEOUT}]'
+          delay: 1d
+          history: 7d
+          value_type: TEXT
+          timeout: 35s
+          tags:
+            - tag: component
+              value: rdp-tls
+        - uuid: 467c58eb54ef47c4abd79fd51f0e72e4
+          name: 'RDP: weak TLS protocol count'
+          type: DEPENDENT
+          key: rdp.tls.weak_count
+          value_type: UNSIGNED
+          master_item:
+            key: 'rdp_check.py[tls-scan,{HOST.CONN}:{$RDP_PORT},--timeout,{$RDP_TIMEOUT}]'
+          preprocessing:
+            - type: JSONPATH
+              parameters:
+                - '$.weak_count'
+              error_handler: DISCARD_VALUE
+          tags:
+            - tag: component
+              value: rdp-tls
+      discovery_rules:
+        - uuid: 8634fb49ecc44d73b711aed2490a88d4
+          name: 'RDP: weak TLS protocol discovery'
+          type: EXTERNAL
+          key: 'rdp_check.py[discover-tls,{HOST.CONN}:{$RDP_PORT},--timeout,{$RDP_TIMEOUT}]'
+          delay: 1d
+          lifetime: 7d
+          description: 'Discovers each weak (<=TLS1.1) protocol the RDP TLS layer offers.'
+          item_prototypes:
+            - uuid: eb3b5be18ca045869f8c3f9414c9bb60
+              name: 'RDP: weak TLS {#RDP_TLS_PROTO} offered'
+              type: DEPENDENT
+              key: 'rdp.tls.weak[{#RDP_TLS_PROTO}]'
+              value_type: UNSIGNED
+              master_item:
+                key: 'rdp_check.py[tls-scan,{HOST.CONN}:{$RDP_PORT},--timeout,{$RDP_TIMEOUT}]'
+              preprocessing:
+                - type: JAVASCRIPT
+                  parameters:
+                    - "return JSON.parse(value).supported_protocols.indexOf('{#RDP_TLS_PROTO}')>=0?1:0"
+              tags:
+                - tag: component
+                  value: rdp-tls
+              trigger_prototypes:
+                - uuid: af46465b183d4c2b8266445735571ebc
+                  expression: 'last(/Template App RDP Service/rdp.tls.weak[{#RDP_TLS_PROTO}])=1'
+                  name: 'RDP: weak TLS {#RDP_TLS_PROTO} offered on {HOST.NAME}'
+                  priority: WARNING
+                  dependencies:
+                    - name: 'RDP service is down on {HOST.NAME}'
+                      expression: 'max(/Template App RDP Service/net.tcp.service[tcp,,{$RDP_PORT}],#3)=0'
+      macros:
+        - macro: '{$RDP_PORT}'
+          value: '3389'
+        - macro: '{$RDP_HOSTNAME}'
+          value: ''
+          description: 'Name matched against the cert SAN/CN; empty = use the connect host ({HOST.CONN})'
+        - macro: '{$RDP_TIMEOUT}'
+          value: '30'
+          description: 'Total time budget per check (seconds); item timeout must exceed it'
+        - macro: '{$RDP_CERT_EXPIRY_WARN}'
+          value: '21'
+          description: 'Days-to-expiry -> Warning'
+        - macro: '{$RDP_CERT_EXPIRY_CRIT}'
+          value: '7'
+          description: 'Days-to-expiry -> High'
+        - macro: '{$RDP_CERT_ALLOW_SELFSIGNED}'
+          value: '1'
+          description: '1 = self-signed is normal; 0 = self-signed raises Warning'
+        - macro: '{$RDP_CERT_EXPECT_CA}'
+          value: '0'
+          description: '1 = alert when the cert is not CA-trusted (chain invalid)'
+        - macro: '{$RDP_CERT_MIN_RSA_BITS}'
+          value: '2048'
+          description: 'Minimum acceptable RSA key size'
+        - macro: '{$RDP_CERT_MIN_EC_BITS}'
+          value: '256'
+          description: 'Minimum acceptable EC key size'
+        - macro: '{$RDP_NLA_ENFORCE}'
+          value: '1'
+          description: '1 = alert when NLA is not enforced'
+      valuemaps:
+        - uuid: d807dfecd1ad4a378fdda2d3b0d804cf
+          name: 'Service state'
+          mappings:
+            - value: '0'
+              newvalue: Down
+            - value: '1'
+              newvalue: Up
+        - uuid: 1b2fbc85514840f791a5b97a2d119e37
+          name: 'RDP boolean'
+          mappings:
+            - value: '0'
+              newvalue: 'No'
+            - value: '1'
+              newvalue: 'Yes'
