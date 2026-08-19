@@ -12,8 +12,10 @@ zabbix_export:
         enforcement and TLS posture via the rdp_check.py external check
         (X.224 / MS-RDPBCGR negotiation).
 
-        Project & docs: https://github.com/IT-for-Prof/zabbix-rdp-services
-        Author: Konstantin Tyutyunnik — IT for Prof (https://itforprof.com) | License: MIT
+        Author:  Konstantin Tyutyunnik / Константин Тютюнник
+        Site:    https://itforprof.com
+        Repo:    https://github.com/IT-for-Prof/zabbix-rdp-services
+        License: MIT (c) 2025-2026 Konstantin Tyutyunnik
 
         Availability: net.tcp.service on {$RDP_PORT} (needs a host interface).
         Cert/NLA/TLS: external rdp_check.py targeting {HOST.CONN}.
@@ -22,7 +24,7 @@ zabbix_export:
         {$RDP_CERT_ALLOW_SELFSIGNED} 1=self-signed OK; {$RDP_CERT_EXPECT_CA} 1=alert if not CA-trusted;
         {$RDP_CERT_MIN_RSA_BITS}/{$RDP_CERT_MIN_EC_BITS} weak-key thresholds; {$RDP_NLA_ENFORCE} 1=alert if NLA off.
       vendor:
-        name: IT for Prof
+        name: itforprof.com
         version: 0.2.0
       groups:
         - name: Templates/Modules
